@@ -174,7 +174,7 @@ setup_cloudflared_screen() {
             DEB_URL="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64.deb"
             ;;
         *)
-            print_err "สถาปัตยกรรมไม่รองรับ: ${ARCH} รองรับเฉพาะ amd64 และ arm64."
+            print_error "สถาปัตยกรรมไม่รองรับ: ${ARCH} รองรับเฉพาะ amd64 และ arm64."
             return 1
             ;;
     esac
@@ -184,7 +184,7 @@ setup_cloudflared_screen() {
         print_info "ไม่พบ cloudflared กำลังดาวน์โหลดแพ็กเกจสำหรับ ${ARCH}..."
         local TMP_DEB="/tmp/cloudflared-${ARCH}.deb"
         if ! wget -q -O "${TMP_DEB}" "${DEB_URL}"; then
-            print_err "ไม่สามารถดาวน์โหลด cloudflared สำหรับ ${ARCH} ได้"
+            print_error "ไม่สามารถดาวน์โหลด cloudflared สำหรับ ${ARCH} ได้"
             return 1
         fi
 
@@ -194,7 +194,7 @@ setup_cloudflared_screen() {
             sudo apt-get -f install -y
             # ลองติดตั้งซ้ำ
             sudo dpkg -i "${TMP_DEB}" >/dev/null 2>&1 || {
-                print_err "ติดตั้ง cloudflared สำหรับ ${ARCH} ไม่สำเร็จ"
+                print_error "ติดตั้ง cloudflared สำหรับ ${ARCH} ไม่สำเร็จ"
                 rm -f "${TMP_DEB}"
                 return 1
             }
@@ -204,7 +204,7 @@ setup_cloudflared_screen() {
 
     # ตรวจสอบว่ามี binary จริงหรือไม่
     if ! command -v cloudflared >/dev/null 2>&1; then
-        print_err "ไม่พบ cloudflared หลังติดตั้ง หยุดทำงาน"
+        print_error "ไม่พบ cloudflared หลังติดตั้ง หยุดทำงาน"
         return 1
     fi
 
@@ -228,7 +228,7 @@ setup_cloudflared_screen() {
         print_ok "Cloudflared tunnel รันอยู่ใน screen 'cftunnel' แล้ว ดูลิงก์ได้โดยใช้ 'screen -r cftunnel' log อยู่ที่: ${LOG_FILE}"
         return 0
     else
-        print_err "ไม่สามารถรัน cloudflared ใน screen ได้ ตรวจสอบ log: ${LOG_FILE} และ 'screen -r cftunnel'"
+        print_error "ไม่สามารถรัน cloudflared ใน screen ได้ ตรวจสอบ log: ${LOG_FILE} และ 'screen -r cftunnel'"
         return 1
     fi
 }
@@ -266,55 +266,4 @@ swap_menu() {
                     sudo swapon /swapfile
                     print_ok "สร้างและเปิดใช้งานไฟล์สว็อปขนาด ${swap_size}GB เรียบร้อยแล้ว"
                 else
-                    print_error "ขนาดไม่ถูกต้อง กรุณาใส่จำนวนเต็มบวก"
-                fi
-                ;;
-            4)
-                return
-                ;;
-            *)
-                print_error "ตัวเลือกไม่ถูกต้อง โปรดลองใหม่อีกครั้ง"
-                ;;
-        esac
-        echo -e "\nกด Enter เพื่อกลับไปที่เมนู..."
-        read -r
-    done
-}
-
-main_menu() {
-    while true; do
-        clear
-        display_logo
-        check_script_version
-        echo -e "\n${clrBold}เลือกคำสั่งที่ต้องการ:${clrReset} / Select an action:"
-        echo "1) ติดตั้ง dependencies / Install dependencies"
-        echo "2) โคลน RL Swarm / Clone RL Swarm"
-        echo "3) รัน Gensyn node ใน screen (ชื่อ: gensyn) / Run Gensyn node in screen (name: gensyn)"
-        echo "4) อัปเดต RL Swarm / Update RL Swarm"
-        echo "5) ตรวจสอบเวอร์ชันปัจจุบันของ node / Check current node version"
-        echo "6) ลบ RL Swarm (พร้อมสำรองคีย์ส่วนตัว) / Remove RL Swarm (keep private key)"
-        echo "7) กู้คืน swarm.pem จากไฟล์สำรอง / Restore swarm.pem from backup"
-        echo "8) รัน HTTPS tunnel ด้วย Cloudflared (screen: cftunnel) / Start HTTPS tunnel Cloudflared (screen: cftunnel)"
-        echo "9) จัดการไฟล์สว็อป / Swap file management"
-        echo "10) ออกจากโปรแกรม / Exit"
-        read -rp "กรอกหมายเลข / Enter a number: " choice
-        case $choice in
-            1) system_update_and_install ;;
-            2) clone_repo ;;
-            3) start_gensyn_screen ;;
-            4) update_node ;;
-            5) check_current_node_version ;;
-            6) delete_rlswarm ;;
-            7) restore_swarm_pem ;;
-            8) setup_cloudflared_screen ;;
-            9) swap_menu ;;
-            10) echo -e "${clrGreen}ลาก่อน!${clrReset}"; exit 0 ;;
-            *) print_error "ตัวเลือกไม่ถูกต้อง โปรดลองใหม่อีกครั้ง" ;;
-        esac
-        echo -े "\nกด Enter เพื่อกลับไปที่เมนู..."
-        read -r
-    done
-}
-
-# เรียกเมนูหลัก (ไม่มีการตรวจสอบเวอร์ชันเพิ่มเติม)
-main_menu
+                    print_error "ขนาดไ_
