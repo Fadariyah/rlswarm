@@ -1,410 +1,318 @@
 #!/bin/bash
 
-# Text colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[0;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-NC='\033[0m' # No color (reset)
+# Pembolehubah untuk semakan versi
+SCRIPT_NAME="Gensyn"
+SCRIPT_VERSION="1.2.0"
+VERSIONS_FILE_URL="https://raw.githubusercontent.com/k2wGG/scripts/main/versions.txt"
+SCRIPT_FILE_URL="https://raw.githubusercontent.com/k2wGG/scripts/main/Gensyn.sh"
 
-# Logo
-channel_logo() {
-  echo -e "${GREEN}"
-  cat << "EOF"
+# Warna untuk output
+clrGreen='\033[0;32m'
+clrCyan='\033[0;36m'
+clrRed='\033[0;31m'
+clrYellow='\033[1;33m'
+clrReset='\033[0m'
+clrBold='\033[1m'
+
+print_ok()    { echo -e "${clrGreen}[OK] $1${clrReset}"; }
+print_info()  { echo -e "${clrCyan}[INFO] $1${clrReset}"; }
+print_warn()  { echo -e "${clrYellow}[WARN] $1${clrReset}"; }
+print_error() { echo -e "${clrRed}[ERROR] $1${clrReset}"; }
+
+display_logo() {
+    cat <<'EOF'
 █████     ████    █████    █████    ██  ██ 
 ██  ██   ██  ██   ██  ██     ██     ███ ██ 
 ██  ██   ██████   █████      ██     ██ ███ 
 ██  ██   ██  ██   ██  ██     ██     ██  ██ 
 █████    ██  ██   ██  ██   █████    ██  ██ 
 
-
 EOF
-  echo -e "${NC}"
 }
 
-# Install node
-download_node() {
-  echo "Starting node installation..."
-  cd "$HOME" || exit 1
-
-  # Install required packages
-  sudo apt update -y && sudo apt install -y lsof
-
-  # Check ports
-  local ports=(4040 3000 42763)
-  for port in "${ports[@]}"; do
-    if lsof -i :"$port" >/dev/null 2>&1; then
-      echo "Error: port $port is in use."
-      echo "Installation is not possible."
-      exit 1
-    fi
-  done
-  echo "All ports are free! Starting installation..."
-
-  # Remove old node if it exists
-  if [ -d "$HOME/rl-swarm" ]; then
-    local pid
-    pid=$(netstat -tulnp | grep :3000 | awk '{print $7}' | cut -d'/' -f1)
-    [ -n "$pid" ] && sudo kill "$pid"
-    sudo rm -rf "$HOME/rl-swarm"
-  fi
-
-  # Configure swap
-  local target_swap_gb=32
-  local current_swap_kb
-  current_swap_kb=$(free -k | awk '/Swap:/ {print $2}')
-  local current_swap_gb=$((current_swap_kb / 1024 / 1024))
-  echo "Current swap size: ${current_swap_gb}GB"
-  if [ "$current_swap_gb" -lt "$target_swap_gb" ]; then
-    swapoff -a
-    sed -i '/swap/d' /etc/fstab
-    local swapfile=/swapfile
-    fallocate -l "${target_swap_gb}G" "$swapfile"
-    chmod 600 "$swapfile"
-    mkswap "$swapfile"
-    swapon "$swapfile"
-    echo "$swapfile none swap sw 0 0" >> /etc/fstab
-    echo "vm.swappiness = 10" >> /etc/sysctl.conf
-    sysctl -p
-    echo "Swap set to ${target_swap_gb}GB"
-  fi
-
-  # Install dependencies
-  sudo apt update -y && sudo apt upgrade -y
-  sudo apt install -y git curl wget build-essential python3 python3-venv python3-pip screen yarn net-tools
-
-  # Install Node.js and Yarn
-  curl -sS https://dl.yarnpkg.com/debian/pubkey.gpg | sudo apt-key add -
-  echo "deb https://dl.yarnpkg.com/debian/ stable main" | sudo tee /etc/apt/sources.list.d/yarn.list
-  curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-  sudo apt install -y nodejs
-  sudo apt update
-  curl -sSL https://raw.githubusercontent.com/zunxbt/installation/main/node.sh | bash
-
-  # Clone and setup repo
-  git clone https://github.com/zunxbt/rl-swarm.git
-  cd rl-swarm || exit 1
-  python3 -m venv .venv
-  source .venv/bin/activate
-  pip install hivemind==1.1.11
-  pip install --upgrade pip
-
-  # PyTorch setup
-  read -p "Does your server have only CPU (no GPU)? (Y/N, if you are not sure - Y): " answer
-  if [[ "$answer" =~ ^[Yy]$ ]]; then
-    echo "Configuring PyTorch for CPU..."
-    export PYTORCH_ENABLE_MPS_FALLBACK=1
-    export PYTORCH_MPS_HIGH_WATERMARK_RATIO=0.0
-    sed -i 's/torch\.device("mps" if torch\.backends\.mps\.is_available() else "cpu")/torch.device("cpu")/g' hivemind_exp/trainer/hivemind_grpo_trainer.py
-    echo "Configuration completed."
-  else
-    echo "Keeping default settings."
-  fi
-
-  # Clear old screen session
-  if screen -list | grep -q "gensyn"; then
-    screen -ls | grep gensyn | awk '{print $1}' | cut -d'.' -f1 | xargs kill
-  fi
-
-  echo "Follow further instructions in the guide."
-}
-
-# Launch node
-launch_node() {
-  # Create directory if it does not exist
-  mkdir -p "$HOME/rl-swarm"
-
-  # Create or clear log file
-  touch "$HOME/rl-swarm/gensyn.log"
-  : > "$HOME/rl-swarm/gensyn.log"
-
-  cd "$HOME/rl-swarm" || exit 1
-  source .venv/bin/activate
-
-  # Determine Python version in virtual environment
-  python_version=$(python --version 2>&1 | awk '{print $2}' | cut -d'.' -f1,2)
-  site_packages_path="$HOME/rl-swarm/.venv/lib/python${python_version}/site-packages/transformers/trainer.py"
-
-  # Check that trainer.py exists
-  if [ -f "$site_packages_path" ]; then
-    echo "Found trainer.py for Python ${python_version}."
-    echo "Replacing line..."
-    sed -i 's/torch\.cpu\.amp\.autocast(/torch.amp.autocast('"'"'cpu'"'"', /g' "$site_packages_path"
-    if [ $? -eq 0 ]; then
-      echo "Line replacement successfully completed in $site_packages_path"
+check_script_version() {
+    print_info "Menyemak versi skrip terkini..."
+    remote_version=$(curl -s "$VERSIONS_FILE_URL" | grep "^${SCRIPT_NAME}=" | cut -d'=' -f2)
+    if [ -z "$remote_version" ]; then
+        print_warn "Tidak dapat menentukan versi remote untuk ${SCRIPT_NAME}"
+    elif [ "$remote_version" != "$SCRIPT_VERSION" ]; then
+        print_warn "Versi baru tersedia: $remote_version (semasa: $SCRIPT_VERSION)"
+        print_info "Disyorkan untuk memuat turun skrip yang dikemas kini dari sini:\n$SCRIPT_FILE_URL"
     else
-      echo "Error while replacing line in $site_packages_path"
-      exit 1
+        print_ok "Menggunakan versi skrip terkini ($SCRIPT_VERSION)"
     fi
-  else
-    echo "File $site_packages_path not found."
-    echo "Skipping line replacement."
-  fi
-
-  # Clear existing screen session, if any
-  if screen -list | grep -q "gensyn"; then
-    screen -ls | grep gensyn | awk '{print $1}' | cut -d'.' -f1 | xargs kill
-  fi
-
-  # Launch node in a new screen session
-  screen -S gensyn -d -m bash -c "trap '' INT; bash run_rl_swarm.sh 2>&1 | tee $HOME/rl-swarm/gensyn.log"
-  echo "Node started in screen 'gensyn'."
 }
 
-# View logs
-watch_logs() {
-  echo "Viewing logs (Ctrl+C to return to menu)..."
-  trap 'echo -e "\nReturning to menu..."; return' SIGINT
-  tail -n 100 -f "$HOME/rl-swarm/gensyn.log"
+# Semakan versi Python dan Node.js telah dibuang
+
+system_update_and_install() {
+    print_info "Mengemas kini sistem dan memasang alat pembangunan yang diperlukan..."
+    
+    sudo apt update
+    sudo apt install -y python3 python3-venv python3-pip curl screen git
+    
+    # Установка yarn из официального репозитория
+    curl -sS https://dl.yarnpkg.com/debian/pubkey.gpg | sudo apt-key add -
+    echo "deb https://dl.yarnpkg.com/debian/ stable main" | sudo tee /etc/apt/sources.list.d/yarn.list
+    sudo apt update && sudo apt install -y yarn
+    
+    # Установка localtunnel
+    sudo npm install -g localtunnel
+    
+    # Установка Node.js 22.x
+    sudo apt-get update
+    curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+    sudo apt-get install -y nodejs
+    
+    # Проверка версий
+    node -v
+    sudo npm install -g yarn
+    yarn -v
+    
+    print_ok "Semua kebergantungan telah dipasang"
 }
 
-# Attach to screen
-go_to_screen() {
-  echo "Detach from screen via Ctrl+A + D"
-  sleep 2
-  screen -r gensyn
+clone_repo() {
+    print_info "Mengklon repositori RL Swarm..."
+    git clone https://github.com/gensyn-ai/rl-swarm.git "$HOME/rl-swarm" || { print_error "Tidak dapat mengklon repositori"; exit 1; }
+    print_ok "Repositori telah diklon"
 }
 
-# Start local server via SSH tunnel and localtunnel
-open_local_server() {
-  npm install -g localtunnel
-  local server_ip
-  server_ip=$(curl -s https://api.ipify.org || curl -s https://ifconfig.co/ip || dig +short myip.opendns.com @resolver1.opendns.com)
-  read -p "Your IP: $server_ip. Is this the correct IP? (y/n): " confirm
-  if [[ "$confirm" != "y" ]]; then
-    read -p "Enter your IP address: " server_ip
-  fi
-  echo "Using IP: $server_ip"
-  ssh -L 3000:localhost:3000 "root@${server_ip}" &
-  lt --port 3000
-}
-
-# Show user data
-userdata() {
-  cat "$HOME/rl-swarm/modal-login/temp-data/userData.json" 2>/dev/null || echo "File userData.json not found."
-}
-
-# Show user API key
-userapikey() {
-  cat "$HOME/rl-swarm/modal-login/temp-data/userApiKey.json" 2>/dev/null || echo "File userApiKey.json not found."
-}
-
-# Stop node
-stop_node() {
-  if screen -list | grep -q "gensyn"; then
-    screen -ls | grep gensyn | awk '{print $1}' | cut -d'.' -f1 | xargs kill
-  fi
-  local pid
-  pid=$(netstat -tulnp | grep :3000 | awk '{print $7}' | cut -d'/' -f1)
-  [ -n "$pid" ] && sudo kill "$pid"
-  echo "Node stopped."
-}
-
-# Delete node
-delete_node() {
-  stop_node
-  sudo rm -rf "$HOME/rl-swarm"
-  echo "Node deleted."
-}
-
-# Fix FutureWarning: torch.cpu.amp.autocast
-fix_future_warning() {
-  echo -e "${BLUE}Fixing FutureWarning: torch.cpu.amp.autocast...${NC}"
-
-  # Stop node
-  echo -e "${YELLOW}Stopping node...${NC}"
-  stop_node
-
-  # Go to rl-swarm directory
-  cd "$HOME/rl-swarm" || { echo -e "${RED}Failed to enter rl-swarm directory. Make sure the node is installed.${NC}"; return; }
-
-  # Activate virtual environment
-  source .venv/bin/activate
-
-  # Determine Python version
-  python_version=$(python --version 2>&1 | awk '{print $2}' | cut -d'.' -f1,2)
-  site_packages_path="$HOME/rl-swarm/.venv/lib/python${python_version}/site-packages/transformers/trainer.py"
-
-  # Check trainer.py
-  if [ -f "$site_packages_path" ]; then
-    echo -e "${YELLOW}Found trainer.py for Python ${python_version}. Replacing line...${NC}"
-    sed -i 's/torch\.cpu\.amp\.autocast(/torch.amp.autocast('"'"'cpu'"'"', /g' "$site_packages_path"
-    if [ $? -eq 0 ]; then
-      echo -e "${GREEN}Line replacement successfully completed in $site_packages_path${NC}"
-    else
-      echo -e "${RED}Error while replacing line in $site_packages_path${NC}"
-      return
+start_gensyn_screen() {
+    # Semak dan jalankan sesi screen 'gensyn' untuk nod
+    if screen -list | grep -q "gensyn"; then
+        print_warn "Sesi screen 'gensyn' sudah wujud! Gunakan 'screen -r gensyn' untuk masuk."
+        return
     fi
-  else
-    echo -e "${RED}File $site_packages_path not found. Make sure the transformers package is installed in the virtual environment.${NC}"
-    echo -e "${YELLOW}Try starting the node to install dependencies, then run this again.${NC}"
-    return
-  fi
-
-  # Restart node
-  echo -e "${YELLOW}Restarting node...${NC}"
-  launch_node
+    print_info "Memulakan nod RL Swarm dalam sesi screen 'gensyn'..."
+    screen -dmS gensyn bash -c '
+        cd ~/rl-swarm || exit 1
+        python3 -m venv .venv
+        source .venv/bin/activate
+        pip install --force-reinstall trl==0.19.1
+        ./run_rl_swarm.sh
+        while true; do
+            sleep 60
+        done
+    '
+    print_ok "Nod dijalankan dalam sesi screen 'gensyn'. Taip 'screen -r gensyn' untuk sambung."
 }
 
-# Fix SyntaxError: duplicate argument 'bootstrap_timeout'
-fix_bootstrap_timeout() {
-  echo -e "${BLUE}Fixing SyntaxError: duplicate argument 'bootstrap_timeout'...${NC}"
-
-  # Stop node
-  echo -e "${YELLOW}Stopping node...${NC}"
-  stop_node
-
-  # Go to rl-swarm directory
-  cd "$HOME/rl-swarm" || { echo -e "${RED}Failed to enter rl-swarm directory. Make sure the node is installed.${NC}"; return; }
-
-  # Activate virtual environment
-  source .venv/bin/activate
-
-  # Install hivemind==1.1.11
-  echo -e "${YELLOW}Installing hivemind==1.1.11...${NC}"
-  pip install hivemind==1.1.11
-  if [ $? -eq 0 ]; then
-    echo -e "${GREEN}Installed hivemind==1.1.11 successfully${NC}"
-  else
-    echo -e "${RED}Error installing hivemind==1.1.11${NC}"
-    return
-  fi
-
-  # Clear existing screen session, if any
-  if screen -list | grep -q "gensyn"; then
-    screen -ls | grep gensyn | awk '{print $1}' | cut -d'.' -f1 | xargs kill
-  fi
-
-  # Create or clear log file
-  touch "$HOME/rl-swarm/gensyn.log"
-  : > "$HOME/rl-swarm/gensyn.log"
-
-  # Restart node in screen with explicit command
-  echo -e "${YELLOW}Restarting node...${NC}"
-  screen -S gensyn -d -m bash -c "cd $HOME/rl-swarm && python3 -m venv .venv && source .venv/bin/activate && ./run_rl_swarm.sh 2>&1 | tee $HOME/rl-swarm/gensyn.log"
-  echo -e "${GREEN}Node started in screen 'gensyn'${NC}"
-}
-
-# Troubleshooting menu
-troubleshoot_menu() {
-  while true; do
-    echo -e "${BLUE}Troubleshooting menu:${NC}"
-    echo -e "${CYAN}1. Fix FutureWarning: torch.cpu.amp.autocast(args...) is deprecated${NC}"
-    echo -e "${CYAN}2. Fix SyntaxError: duplicate argument 'bootstrap_timeout' in function definition${NC}"
-    echo -e "${CYAN}3. Return to main menu${NC}"
-    echo -e " "
-    read -p "Enter number: " choice
-    case "$choice" in
-      1) fix_future_warning ;;
-      2) fix_bootstrap_timeout ;;
-      3) return ;;
-      *) echo -e "Invalid choice.
-Enter a number from 1 to 3." ;;
-    esac
-  done
-}
-
-# Update node
 update_node() {
-  echo -e "${BLUE}Starting node update...${NC}"
-
-  # Create directory if it does not exist
-  mkdir -p "$HOME/rl-swarm"
-
-  # Create or clear log file
-  touch "$HOME/rl-swarm/gensyn.log"
-  : > "$HOME/rl-swarm/gensyn.log"
-
-  # Stop existing screen session
-  pkill -f "SCREEN.*gensyn"
-
-  # Save existing files swarm.pem, userData.json and userApiKey.json
-  if [ -f "$HOME/rl-swarm/swarm.pem" ]; then
-    cp "$HOME/rl-swarm/swarm.pem" "$HOME/"
-    cp "$HOME/rl-swarm/modal-login/temp-data/userData.json" "$HOME/" 2>/dev/null
-    cp "$HOME/rl-swarm/modal-login/temp-data/userApiKey.json" "$HOME/" 2>/dev/null
-  fi
-
-  # Remove old directory and clone new one
-  rm -rf "$HOME/rl-swarm"
-  cd "$HOME" && git clone https://github.com/zunxbt/rl-swarm.git > /dev/null 2>&1
-  cd "$HOME/rl-swarm" || { echo -e "${RED}Failed to enter rl-swarm directory. Exiting.${NC}"; exit 1; }
-
-  # Restore saved files
-  if [ -f "$HOME/swarm.pem" ]; then
-    mv "$HOME/swarm.pem" "$HOME/rl-swarm/"
-    mv "$HOME/userData.json" "$HOME/rl-swarm/modal-login/temp-data/" 2>/dev/null
-    mv "$HOME/userApiKey.json" "$HOME/rl-swarm/modal-login/temp-data/" 2>/dev/null
-  fi
-
-  # Setup virtual environment
-  if [ -n "$VIRTUAL_ENV" ]; then
-    deactivate
-  fi
-  python3 -m venv .venv
-  source .venv/bin/activate
-
-  # Determine Python version
-  python_version=$(python --version 2>&1 | awk '{print $2}' | cut -d'.' -f1,2)
-  site_packages_path="$HOME/rl-swarm/.venv/lib/python${python_version}/site-packages/transformers/trainer.py"
-
-  # Check trainer.py
-  if [ -f "$site_packages_path" ]; then
-    echo -e "${YELLOW}Found trainer.py for Python ${python_version}. Replacing line...${NC}"
-    sed -i 's/torch\.cpu\.amp\.autocast(/torch.amp.autocast('"'"'cpu'"'"', /g' "$site_packages_path"
-    if [ $? -eq 0 ]; then
-      echo -e "${GREEN}Line replacement successfully completed in $site_packages_path${NC}"
+    print_info "Mengemas kini RL Swarm..."
+    if [ -d "$HOME/rl-swarm" ]; then
+        cd "$HOME/rl-swarm" || exit 1
+        git switch main
+        git reset --hard
+        git clean -fd
+        git pull origin main
+        git pull
+        print_ok "Repositori telah dikemas kini."
     else
-      echo -e "${RED}Error while replacing line in $site_packages_path${NC}"
-      exit 1
+        print_error "Folder rl-swarm tidak ditemui"
     fi
-  else
-    echo -e "${YELLOW}File $site_packages_path not found. Skipping line replacement.${NC}"
-  fi
-
-  # Launch node in screen
-  screen -S gensyn -d -m bash -c "trap '' INT; bash run_rl_swarm.sh 2>&1 | tee $HOME/rl-swarm/gensyn.log"
-  echo -e "${GREEN}Update completed. Node started in screen 'gensyn'. Logs are available at $HOME/rl-swarm/gensyn.log${NC}"
 }
 
-# Main menu
-main_menu() {
-  while true; do
-    channel_logo
-    sleep 2
-    echo -e "${YELLOW}Choose an action:${NC}"
-    echo -e "${CYAN}1. Install node (v. 0.4.2)${NC}"
-    echo -e "${CYAN}2. Launch node${NC}"
-    echo -e "${CYAN}3. View logs${NC}"
-    echo -e "${CYAN}4. Attach to node screen${NC}"
-    echo -e "${CYAN}5. Start local server${NC}"
-    echo -e "${CYAN}6. Show user data${NC}"
-    echo -e "${CYAN}7. Show user API key${NC}"
-    echo -e "${CYAN}8. Stop node${NC}"
-    echo -e "${CYAN}9. Delete node${NC}"
-    echo -e "${CYAN}10. Update node (v. 0.4.2)${NC}"
-    echo -e "${CYAN}11. Exit script${NC}"
-    echo -e "${CYAN}12. Troubleshooting${NC}"
-    echo -e " "
-    read -p "Enter number: " choice
-    case "$choice" in
-      1) download_node ;;
-      2) launch_node ;;
-      3) watch_logs ;;
-      4) go_to_screen ;;
-      5) open_local_server ;;
-      6) userdata ;;
-      7) userapikey ;;
-      8) stop_node ;;
-      9) delete_node ;;
-      10) update_node ;;
-      11) exit 0 ;;
-      12) troubleshoot_menu ;;
-      *) echo "Invalid choice. Enter a number from 1 to 12." ;;
+check_current_node_version() {
+    if [ -d "$HOME/rl-swarm" ]; then
+        cd "$HOME/rl-swarm" || { print_error "Tidak dapat masuk ke direktori rl-swarm"; return; }
+        current_version=$(git describe --tags 2>/dev/null)
+        if [ $? -eq 0 ]; then
+            print_ok "Versi nod semasa: $current_version"
+        else
+            print_warn "Tidak dapat menentukan versi semasa (mungkin tiada tag)"
+        fi
+    else
+        print_error "Folder rl-swarm tidak ditemui"
+    fi
+}
+
+delete_rlswarm() {
+    print_warn "Menyimpan kunci peribadi swarm.pem (jika ada)..."
+    if [ -f "$HOME/rl-swarm/swarm.pem" ]; then
+        cp "$HOME/rl-swarm/swarm.pem" "$HOME/swarm.pem.backup"
+        print_ok "swarm.pem disalin ke $HOME/swarm.pem.backup"
+    fi
+    print_info "Memadam rl-swarm..."
+    rm -rf "$HOME/rl-swarm"
+    print_ok "Folder rl-swarm telah dipadam. Kunci peribadi disimpan sebagai ~/swarm.pem.backup"
+}
+
+restore_swarm_pem() {
+    if [ -f "$HOME/swarm.pem.backup" ]; then
+        cp "$HOME/swarm.pem.backup" "$HOME/rl-swarm/swarm.pem"
+        print_ok "swarm.pem dipulihkan daripada $HOME/swarm.pem.backup"
+    else
+        print_warn "Sandaran swarm.pem tidak ditemui."
+    fi
+}
+
+setup_cloudflared_screen() {
+    print_info "Pemasangan dan jalankan Cloudflared untuk terowong HTTPS pada port 3000..."
+
+    # Pakej asas
+    sudo apt-get update -y
+    sudo apt-get install -y ufw screen wget ca-certificates
+
+    # Peraturan UFW
+    sudo ufw allow 22/tcp
+    sudo ufw allow 3000/tcp
+    sudo ufw --force enable
+
+    # Определяем архитектуру для выбора правильного .deb
+    local ARCH
+    ARCH="$(dpkg --print-architecture 2>/dev/null || echo unknown)"
+
+    local DEB_URL=""
+    case "$ARCH" in
+        amd64)
+            DEB_URL="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb"
+            ;;
+        arm64)
+            DEB_URL="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64.deb"
+            ;;
+        *)
+            print_err "Seni bina tidak disokong: ${ARCH}. Hanya amd64 dan arm64 disokong."
+            return 1
+            ;;
     esac
-  done
+
+    # Установка cloudflared, если не стоит
+    if ! command -v cloudflared >/dev/null 2>&1; then
+        print_info "cloudflared tidak ditemui. Memuat turun pakej untuk ${ARCH}..."
+        local TMP_DEB="/tmp/cloudflared-${ARCH}.deb"
+        if ! wget -q -O "${TMP_DEB}" "${DEB_URL}"; then
+            print_err "Tidak dapat memuat turun cloudflared untuk ${ARCH}."
+            return 1
+        fi
+
+        print_info "Memasang cloudflared..."
+        if ! sudo dpkg -i "${TMP_DEB}" >/dev/null 2>&1; then
+            # подтянуть зависимости при необходимости
+            sudo apt-get -f install -y
+            # повторить установку
+            sudo dpkg -i "${TMP_DEB}" >/dev/null 2>&1 || {
+                print_err "Tidak dapat memasang cloudflared untuk ${ARCH}."
+                rm -f "${TMP_DEB}"
+                return 1
+            }
+        fi
+        rm -f "${TMP_DEB}"
+    fi
+
+    # Финальная проверка наличия бинаря
+    if ! command -v cloudflared >/dev/null 2>&1; then
+        print_err "cloudflared tidak ditemui selepas pemasangan. Menghentikan."
+        return 1
+    fi
+
+    # Не создаём второй screen, если уже есть
+    if screen -list | grep -q "[.]cftunnel"; then
+        print_warn "Sesi screen 'cftunnel' sudah wujud! Gunakan 'screen -r cftunnel' untuk masuk."
+        return 0
+    fi
+
+    # Folder untuk log
+    sudo mkdir -p /var/log
+    local LOG_FILE="/var/log/cloudflared-screen.log"
+
+    print_info "Memulakan terowong Cloudflared dalam sesi screen 'cftunnel'..."
+    # -dmS: detached, named session; bash -lc чтобы подхватить PATH
+    screen -dmS cftunnel bash -lc "cloudflared tunnel --no-autoupdate --url http://localhost:3000 2>&1 | tee -a ${LOG_FILE}"
+
+    # Небольшая задержка и проверка процесса
+    sleep 1
+    if pgrep -af cloudflared >/dev/null 2>&1; then
+        print_ok "Terowong Cloudflared dijalankan dalam screen 'cftunnel'. Lihat pautan dalam output: 'screen -r cftunnel'. Log: ${LOG_FILE}"
+        return 0
+    else
+        print_err "Tidak dapat memulakan cloudflared dalam screen. Semak log: ${LOG_FILE} dan 'screen -r cftunnel'."
+        return 1
+    fi
 }
 
-# Run script
+swap_menu() {
+    while true; do
+        clear
+        display_logo
+        echo -e "\n${clrBold}Pengurusan fail swap:${clrReset}"
+        echo "1) Fail swap yang aktif sekarang"
+        echo "2) Hentikan fail swap"
+        echo "3) Cipta fail swap"
+        echo "4) Kembali"
+        read -rp "Masukkan nombor: " swap_choice
+        case $swap_choice in
+            1)
+                print_info "Fail swap yang aktif:"
+                swapon --show
+                ;;
+            2)
+                print_info "Menghentikan fail swap..."
+                if [ -f /swapfile ]; then
+                    sudo swapoff /swapfile
+                    print_ok "Fail swap dihentikan"
+                else
+                    print_warn "Fail swap /swapfile tidak ditemui"
+                fi
+                ;;
+            3)
+                read -rp "Masukkan saiz fail swap dalam GB: " swap_size
+                if [[ $swap_size =~ ^[0-9]+$ ]] && [ "$swap_size" -gt 0 ]; then
+                    print_info "Mencipta fail swap bersaiz ${swap_size}GB..."
+                    sudo fallocate -l ${swap_size}G /swapfile
+                    sudo mkswap /swapfile
+                    sudo swapon /swapfile
+                    print_ok "Fail swap bersaiz ${swap_size}GB telah dicipta dan diaktifkan"
+                else
+                    print_error "Saiz tidak sah. Sila masukkan nombor bulat positif."
+                fi
+                ;;
+            4)
+                return
+                ;;
+            *)
+                print_error "Pilihan tidak sah, cuba lagi."
+                ;;
+        esac
+        echo -e "\nTekan Enter untuk kembali ke menu..."
+        read -r
+    done
+}
+
+main_menu() {
+    while true; do
+        clear
+        display_logo
+        check_script_version
+        echo -e "\n${clrBold}Pilih tindakan:${clrReset} / Select an action:"
+        echo "1) Pasang kebergantungan / Install dependencies"
+        echo "2) Klon RL Swarm / Clone RL Swarm"
+        echo "3) Jalankan nod Gensyn dalam screen (nama: gensyn) / Run Gensyn node in screen (name: gensyn)"
+        echo "4) Kemas kini RL Swarm / Update RL Swarm"
+        echo "5) Semak versi nod semasa / Check current node version"
+        echo "6) Padam RL Swarm (simpan kunci peribadi) / Remove RL Swarm (keep private key)"
+        echo "7) Pulihkan swarm.pem daripada sandaran / Restore swarm.pem from backup"
+        echo "8) Jalankan terowong HTTPS Cloudflared (screen: cftunnel) / Start HTTPS tunnel Cloudflared (screen: cftunnel)"
+        echo "9) Pengurusan fail swap / Swap file management"
+        echo "10) Keluar / Exit"
+        read -rp "Masukkan nombor / Enter a number: " choice
+        case $choice in
+            1) system_update_and_install ;;
+            2) clone_repo ;;
+            3) start_gensyn_screen ;;
+            4) update_node ;;
+            5) check_current_node_version ;;
+            6) delete_rlswarm ;;
+            7) restore_swarm_pem ;;
+            8) setup_cloudflared_screen ;;
+            9) swap_menu ;;
+            10) echo -e "${clrGreen}Selamat jalan!${clrReset}"; exit 0 ;;
+            *) print_error "Pilihan tidak sah, cuba lagi." ;;
+        esac
+        echo -e "\nTekan Enter untuk kembali ke menu..."
+        read -r
+    done
+}
+
+# Jalankan menu utama (tanpa semakan versi)
 main_menu
