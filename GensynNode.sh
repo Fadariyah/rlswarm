@@ -1,12 +1,12 @@
 #!/bin/bash
 
-# ตัวแปรสำหรับตรวจสอบเวอร์ชัน
+# Variables for version check
 SCRIPT_NAME="Gensyn"
 SCRIPT_VERSION="1.2.0"
 VERSIONS_FILE_URL="https://raw.githubusercontent.com/k2wGG/scripts/main/versions.txt"
 SCRIPT_FILE_URL="https://raw.githubusercontent.com/k2wGG/scripts/main/Gensyn.sh"
 
-# สีสำหรับการแสดงผล
+# Colors for output
 clrGreen='\033[0;32m'
 clrCyan='\033[0;36m'
 clrRed='\033[0;31m'
@@ -21,72 +21,69 @@ print_error() { echo -e "${clrRed}[ERROR] $1${clrReset}"; }
 
 display_logo() {
     cat <<'EOF'
- _   _           _  _____      
-| \ | |         | ||____ |     
-|  \| | ___   __| |    / /_ __ 
-| . ` |/ _ \ / _` |    \ \ '__|
-| |\  | (_) | (_| |.___/ / |   
-\_| \_/\___/ \__,_|\____/|_|
-          Gensyn
-           ช่อง: @nod3r
+█████     ████    █████    █████    ██  ██ 
+██  ██   ██  ██   ██  ██     ██     ███ ██ 
+██  ██   ██████   █████      ██     ██ ███ 
+██  ██   ██  ██   ██  ██     ██     ██  ██ 
+█████    ██  ██   ██  ██   █████    ██  ██ 
 EOF
 }
 
 check_script_version() {
-    print_info "กำลังตรวจสอบว่าใช้สคริปต์เวอร์ชันล่าสุดหรือไม่..."
+    print_info "Checking script version..."
     remote_version=$(curl -s "$VERSIONS_FILE_URL" | grep "^${SCRIPT_NAME}=" | cut -d'=' -f2)
     if [ -z "$remote_version" ]; then
-        print_warn "ไม่สามารถตรวจสอบเวอร์ชันจากรีโมตของ ${SCRIPT_NAME} ได้"
+        print_warn "Could not determine remote version for ${SCRIPT_NAME}"
     elif [ "$remote_version" != "$SCRIPT_VERSION" ]; then
-        print_warn "มีเวอร์ชันใหม่: $remote_version (ปัจจุบัน: $SCRIPT_VERSION)"
-        print_info "แนะนำให้ดาวน์โหลดสคริปต์เวอร์ชันล่าสุดจากลิงก์นี้:\n$SCRIPT_FILE_URL"
+        print_warn "New version available: $remote_version (current: $SCRIPT_VERSION)"
+        print_info "It is recommended to download the updated script from:\n$SCRIPT_FILE_URL"
     else
-        print_ok "กำลังใช้สคริปต์เวอร์ชันล่าสุดแล้ว ($SCRIPT_VERSION)"
+        print_ok "You are using the latest script version ($SCRIPT_VERSION)"
     fi
 }
 
-# เอาการตรวจสอบเวอร์ชันของ Python และ Node.js ออกแล้ว
+# Removed Python and Node.js version checks
 
 system_update_and_install() {
-    print_info "อัปเดตระบบและติดตั้งเครื่องมือสำหรับพัฒนาให้ครบ..."
+    print_info "Updating system and installing required development tools..."
     
     sudo apt update
     sudo apt install -y python3 python3-venv python3-pip curl screen git
     
-    # ติดตั้ง yarn จาก repo อย่างเป็นทางการ
+    # Install yarn from the official repository
     curl -sS https://dl.yarnpkg.com/debian/pubkey.gpg | sudo apt-key add -
     echo "deb https://dl.yarnpkg.com/debian/ stable main" | sudo tee /etc/apt/sources.list.d/yarn.list
     sudo apt update && sudo apt install -y yarn
     
-    # ติดตั้ง localtunnel
+    # Install localtunnel
     sudo npm install -g localtunnel
     
-    # ติดตั้ง Node.js 22.x
+    # Install Node.js 22.x
     sudo apt-get update
     curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
     sudo apt-get install -y nodejs
     
-    # ตรวจสอบเวอร์ชัน
+    # Check versions
     node -v
     sudo npm install -g yarn
     yarn -v
     
-    print_ok "ติดตั้ง dependencies ทั้งหมดเรียบร้อยแล้ว"
+    print_ok "All dependencies installed"
 }
 
 clone_repo() {
-    print_info "กำลังโคลนรีโพ RL Swarm..."
-    git clone https://github.com/gensyn-ai/rl-swarm.git "$HOME/rl-swarm" || { print_error "ไม่สามารถโคลนรีโพได้"; exit 1; }
-    print_ok "โคลนรีโพเรียบร้อยแล้ว"
+    print_info "Cloning RL Swarm repository..."
+    git clone https://github.com/gensyn-ai/rl-swarm.git "$HOME/rl-swarm" || { print_error "Failed to clone repository"; exit 1; }
+    print_ok "Repository cloned"
 }
 
 start_gensyn_screen() {
-    # ตรวจสอบและรัน screen session ชื่อ gensyn สำหรับ node
+    # Check and start screen session 'gensyn' for the node
     if screen -list | grep -q "gensyn"; then
-        print_warn "มี screen session 'gensyn' อยู่แล้ว! ใช้คำสั่ง 'screen -r gensyn' เพื่อเข้าใช้งาน"
+        print_warn "Screen session 'gensyn' already exists! Use 'screen -r gensyn' to attach."
         return
     fi
-    print_info "กำลังรัน RL Swarm node ใน screen session 'gensyn'..."
+    print_info "Starting RL Swarm node in screen session 'gensyn'..."
     screen -dmS gensyn bash -c '
         cd ~/rl-swarm || exit 1
         python3 -m venv .venv
@@ -97,11 +94,11 @@ start_gensyn_screen() {
             sleep 60
         done
     '
-    print_ok "รัน node ใน screen session 'gensyn' แล้ว พิมพ์ 'screen -r gensyn' เพื่อเข้าไปดู"
+    print_ok "Node started in screen session 'gensyn'. Use 'screen -r gensyn' to attach."
 }
 
 update_node() {
-    print_info "กำลังอัปเดต RL Swarm..."
+    print_info "Updating RL Swarm..."
     if [ -d "$HOME/rl-swarm" ]; then
         cd "$HOME/rl-swarm" || exit 1
         git switch main
@@ -109,59 +106,59 @@ update_node() {
         git clean -fd
         git pull origin main
         git pull
-        print_ok "อัปเดตรีโพเรียบร้อยแล้ว"
+        print_ok "Repository updated."
     else
-        print_error "ไม่พบโฟลเดอร์ rl-swarm"
+        print_error "Directory rl-swarm not found"
     fi
 }
 
 check_current_node_version() {
     if [ -d "$HOME/rl-swarm" ]; then
-        cd "$HOME/rl-swarm" || { print_error "ไม่สามารถเข้าโฟลเดอร์ rl-swarm ได้"; return; }
+        cd "$HOME/rl-swarm" || { print_error "Failed to change directory to rl-swarm"; return; }
         current_version=$(git describe --tags 2>/dev/null)
         if [ $? -eq 0 ]; then
-            print_ok "เวอร์ชันปัจจุบันของ node: $current_version"
+            print_ok "Current node version: $current_version"
         else
-            print_warn "ไม่สามารถดูเวอร์ชันปัจจุบันได้ (อาจยังไม่มี tag)"
+            print_warn "Could not determine current version (possibly no tags)"
         fi
     else
-        print_error "ไม่พบโฟลเดอร์ rl-swarm"
+        print_error "Directory rl-swarm not found"
     fi
 }
 
 delete_rlswarm() {
-    print_warn "กำลังสำรองไฟล์คีย์ส่วนตัว swarm.pem (ถ้ามี)..."
+    print_warn "Saving private key swarm.pem (if exists)..."
     if [ -f "$HOME/rl-swarm/swarm.pem" ]; then
         cp "$HOME/rl-swarm/swarm.pem" "$HOME/swarm.pem.backup"
-        print_ok "คัดลอก swarm.pem ไปไว้ที่ $HOME/swarm.pem.backup แล้ว"
+        print_ok "swarm.pem copied to $HOME/swarm.pem.backup"
     fi
-    print_info "กำลังลบโฟลเดอร์ rl-swarm..."
+    print_info "Removing rl-swarm..."
     rm -rf "$HOME/rl-swarm"
-    print_ok "ลบโฟลเดอร์ rl-swarm เรียบร้อยแล้ว คีย์ส่วนตัวถูกสำรองเป็น ~/swarm.pem.backup"
+    print_ok "Directory rl-swarm removed. Private key saved as ~/swarm.pem.backup"
 }
 
 restore_swarm_pem() {
     if [ -f "$HOME/swarm.pem.backup" ]; then
         cp "$HOME/swarm.pem.backup" "$HOME/rl-swarm/swarm.pem"
-        print_ok "กู้คืน swarm.pem จาก $HOME/swarm.pem.backup แล้ว"
+        print_ok "swarm.pem restored from $HOME/swarm.pem.backup"
     else
-        print_warn "ไม่พบไฟล์สำรอง swarm.pem"
+        print_warn "swarm.pem backup not found."
     fi
 }
 
 setup_cloudflared_screen() {
-    print_info "ติดตั้งและรัน Cloudflared สำหรับ HTTPS tunnel ที่พอร์ต 3000..."
+    print_info "Installing and starting Cloudflared HTTPS tunnel to port 3000..."
 
-    # แพ็กเกจพื้นฐาน
+    # Basic packages
     sudo apt-get update -y
     sudo apt-get install -y ufw screen wget ca-certificates
 
-    # ตั้งค่า UFW
+    # UFW rules
     sudo ufw allow 22/tcp
     sudo ufw allow 3000/tcp
     sudo ufw --force enable
 
-    # ตรวจสอบสถาปัตยกรรมเพื่อลง .deb ให้ถูก
+    # Detect architecture for the correct .deb
     local ARCH
     ARCH="$(dpkg --print-architecture 2>/dev/null || echo unknown)"
 
@@ -174,27 +171,27 @@ setup_cloudflared_screen() {
             DEB_URL="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64.deb"
             ;;
         *)
-            print_error "สถาปัตยกรรมไม่รองรับ: ${ARCH} รองรับเฉพาะ amd64 และ arm64."
+            print_error "Unsupported architecture: ${ARCH}. Only amd64 and arm64 are supported."
             return 1
             ;;
     esac
 
-    # ติดตั้ง cloudflared ถ้ายังไม่มี
+    # Install cloudflared if not present
     if ! command -v cloudflared >/dev/null 2>&1; then
-        print_info "ไม่พบ cloudflared กำลังดาวน์โหลดแพ็กเกจสำหรับ ${ARCH}..."
+        print_info "cloudflared not found. Downloading package for ${ARCH}..."
         local TMP_DEB="/tmp/cloudflared-${ARCH}.deb"
         if ! wget -q -O "${TMP_DEB}" "${DEB_URL}"; then
-            print_error "ไม่สามารถดาวน์โหลด cloudflared สำหรับ ${ARCH} ได้"
+            print_error "Failed to download cloudflared for ${ARCH}."
             return 1
         fi
 
-        print_info "กำลังติดตั้ง cloudflared..."
+        print_info "Installing cloudflared..."
         if ! sudo dpkg -i "${TMP_DEB}" >/dev/null 2>&1; then
-            # ติดตั้ง dependencies เพิ่มถ้าจำเป็น
+            # Pull dependencies if needed
             sudo apt-get -f install -y
-            # ลองติดตั้งซ้ำ
+            # Retry install
             sudo dpkg -i "${TMP_DEB}" >/dev/null 2>&1 || {
-                print_error "ติดตั้ง cloudflared สำหรับ ${ARCH} ไม่สำเร็จ"
+                print_error "Failed to install cloudflared for ${ARCH}."
                 rm -f "${TMP_DEB}"
                 return 1
             }
@@ -202,33 +199,31 @@ setup_cloudflared_screen() {
         rm -f "${TMP_DEB}"
     fi
 
-    # ตรวจสอบว่ามี binary จริงหรือไม่
+    # Final check
     if ! command -v cloudflared >/dev/null 2>&1; then
-        print_error "ไม่พบ cloudflared หลังติดตั้ง หยุดทำงาน"
+        print_error "cloudflared not found after installation. Aborting."
         return 1
     fi
 
-    # ไม่สร้าง screen ซ้ำถ้ามีอยู่แล้ว
+    # Do not create another screen if exists
     if screen -list | grep -q "[.]cftunnel"; then
-        print_warn "มี screen session 'cftunnel' อยู่แล้ว! ใช้ 'screen -r cftunnel' เพื่อเข้าใช้งาน"
+        print_warn "Screen session 'cftunnel' already exists! Use 'screen -r cftunnel' to attach."
         return 0
     fi
 
-    # โฟลเดอร์สำหรับ log
+    # Log directory
     sudo mkdir -p /var/log
     local LOG_FILE="/var/log/cloudflared-screen.log"
 
-    print_info "กำลังรัน Cloudflared tunnel ใน screen session 'cftunnel'..."
-    # -dmS: detached, ตั้งชื่อ session; bash -lc เพื่อให้ PATH ถูกต้อง
+    print_info "Starting Cloudflared tunnel in screen session 'cftunnel'..."
     screen -dmS cftunnel bash -lc "cloudflared tunnel --no-autoupdate --url http://localhost:3000 2>&1 | tee -a ${LOG_FILE}"
 
-    # หน่วงเวลานิดหน่อยแล้วเช็ก process
     sleep 1
     if pgrep -af cloudflared >/dev/null 2>&1; then
-        print_ok "Cloudflared tunnel รันอยู่ใน screen 'cftunnel' แล้ว ดูลิงก์ได้โดยใช้ 'screen -r cftunnel' log อยู่ที่: ${LOG_FILE}"
+        print_ok "Cloudflared tunnel started in screen 'cftunnel'. See URL in: 'screen -r cftunnel'. Logs: ${LOG_FILE}"
         return 0
     else
-        print_error "ไม่สามารถรัน cloudflared ใน screen ได้ ตรวจสอบ log: ${LOG_FILE} และ 'screen -r cftunnel'"
+        print_error "Failed to start cloudflared in screen. Check logs: ${LOG_FILE} and 'screen -r cftunnel'."
         return 1
     fi
 }
@@ -237,33 +232,84 @@ swap_menu() {
     while true; do
         clear
         display_logo
-        echo -e "\n${clrBold}จัดการไฟล์สว็อป (swap file):${clrReset}"
-        echo "1) แสดงไฟล์สว็อปที่ใช้งานอยู่ตอนนี้"
-        echo "2) ปิดการใช้งานไฟล์สว็อป"
-        echo "3) สร้างไฟล์สว็อปใหม่"
-        echo "4) กลับไปเมนูก่อนหน้า"
-        read -rp "กรอกหมายเลข: " swap_choice
+        echo -e "\n${clrBold}Swap file management:${clrReset}"
+        echo "1) Show active swap file"
+        echo "2) Disable swap file"
+        echo "3) Create swap file"
+        echo "4) Back"
+        read -rp "Enter a number: " swap_choice
         case $swap_choice in
             1)
-                print_info "ไฟล์สว็อปที่กำลังใช้งาน:"
+                print_info "Active swap file:"
                 swapon --show
                 ;;
             2)
-                print_info "กำลังปิดการใช้งานไฟล์สว็อป..."
+                print_info "Stopping swap file..."
                 if [ -f /swapfile ]; then
                     sudo swapoff /swapfile
-                    print_ok "ปิดการใช้งานไฟล์สว็อปแล้ว"
+                    print_ok "Swap file disabled"
                 else
-                    print_warn "ไม่พบไฟล์สว็อป /swapfile"
+                    print_warn "Swap file /swapfile not found"
                 fi
                 ;;
             3)
-                read -rp "ระบุขนาดไฟล์สว็อปเป็น GB: " swap_size
+                read -rp "Enter swap file size in GB: " swap_size
                 if [[ $swap_size =~ ^[0-9]+$ ]] && [ "$swap_size" -gt 0 ]; then
-                    print_info "กำลังสร้างไฟล์สว็อปขนาด ${swap_size}GB..."
+                    print_info "Creating swap file of size ${swap_size}G..."
                     sudo fallocate -l ${swap_size}G /swapfile
                     sudo mkswap /swapfile
                     sudo swapon /swapfile
-                    print_ok "สร้างและเปิดใช้งานไฟล์สว็อปขนาด ${swap_size}GB เรียบร้อยแล้ว"
+                    print_ok "Swap file of size ${swap_size}G created and activated"
                 else
-                    print_error "ขนาดไ_
+                    print_error "Invalid size. Enter a positive integer."
+                fi
+                ;;
+            4)
+                return
+                ;;
+            *)
+                print_error "Invalid choice, please try again."
+                ;;
+        esac
+        echo -e "\nPress Enter to return to the menu..."
+        read -r
+    done
+}
+
+main_menu() {
+    while true; do
+        clear
+        display_logo
+        check_script_version
+        echo -e "\n${clrBold}Select an action:${clrReset}"
+        echo "1) Install dependencies"
+        echo "2) Clone RL Swarm"
+        echo "3) Run Gensyn node in screen (name: gensyn)"
+        echo "4) Update RL Swarm"
+        echo "5) Check current node version"
+        echo "6) Remove RL Swarm (keep private key)"
+        echo "7) Restore swarm.pem from backup"
+        echo "8) Start HTTPS tunnel Cloudflared (screen: cftunnel)"
+        echo "9) Swap file management"
+        echo "10) Exit"
+        read -rp "Enter a number: " choice
+        case $choice in
+            1) system_update_and_install ;;
+            2) clone_repo ;;
+            3) start_gensyn_screen ;;
+            4) update_node ;;
+            5) check_current_node_version ;;
+            6) delete_rlswarm ;;
+            7) restore_swarm_pem ;;
+            8) setup_cloudflared_screen ;;
+            9) swap_menu ;;
+            10) echo -e "${clrGreen}Goodbye!${clrReset}"; exit 0 ;;
+            *) print_error "Invalid choice, please try again." ;;
+        esac
+        echo -e "\nPress Enter to return to the menu..."
+        read -r
+    done
+}
+
+# Start main menu
+main_menu
